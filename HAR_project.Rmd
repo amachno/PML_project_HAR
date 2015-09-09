@@ -1,0 +1,92 @@
+---
+title: "Human Activity Recognition"
+author: "A. M. Machno"
+output: html_document
+---
+
+##Introduction
+
+This analysis is done as a part of "Practical Machine Learning" course which is part of the Data Science specialization offered by coursera and taught by great professors from John Hopkins Bloomberg School of Public Health. The goal of the project is to construct a prediction method for human activity. 
+
+##Data
+
+
+Let's load the data and do some preprocessing. In order to replicate, make sure that you have data files in your working directory. I like to read data with all columns classes beind character. It is very easy to change class from character to any other and by default "read.csv" function sometimes reads numeric colums as factors or messes with it in some other way.
+```{r, cache=T}
+data.train<-read.csv("pml-training.csv", colClasses = 'character')
+str(data.train)
+```
+It seems that we have a lot of NAs and most of them are cumulated in the same colums, so we just remove those NA colums. Additionally, first seven variables won't help with prediction, because they are strictly connected to objects not to the outcome. 
+```{r, cache=T}
+data.train<-data.train[,-(1:7)]
+for (i in 1:(length(data.train[1,])-1)){
+      data.train[[i]]<-as.numeric(data.train[[i]])
+}
+data.train$classe<-factor(data.train$classe)
+
+#calculatinc number of NAs in colums
+nasum<-apply(data.train,2, function(x) sum(is.na(x)))
+data.train<-data.train[,nasum==0]
+
+#Lets preprocess test data in the same way to avoid problems later
+ data.test<-read.csv("pml-testing.csv", colClasses = 'character')
+data.test<-data.test[,-(1:7)]
+ for (i in 1:(length(data.test[1,])-1)){
+       data.test[[i]]<-as.numeric(data.test[[i]])
+ }
+ data.test<-data.test[,nasum==0]
+```
+
+Let's see how the cleaned data looks like. I know that this is not very ellegant way to do the cleaning, but cleaning is not to look pretty, but to produce pretty dataset.
+```{r, cache=T}
+ str(data.train)
+ str(data.test)
+```
+In my opinion the data sets look decent, all is in order, column classes are proper and it seems that all variables are relevant.
+
+##Prediction
+My personal goal is to score 19/20 for the test data prediction which I am supposed to submit. 
+```{r}
+ pbinom(18.5,20,.98, lower.tail = F)
+```
+I turns out that if I would have 98% accuracy, I will score 19 or 20 with probability 94%. 
+Firstly, let's split the data into training and testing in order to do some validation. 
+```{r, cache=T}
+library(caret)
+library(kernlab)
+set.seed(11)
+inTrain<-createDataPartition(y=data.train$classe, p=0.6, list=FALSE)
+training<-data.train[inTrain,]
+testing<-data.train[-inTrain,]
+```
+I have tried Random Forests, Linear Discriminant Analysis, Quadratic Discriminant Analysis, Classification Trees, some boosting and bagging.
+It turned out that Random Forests are absolutely the best in the collection of methods I tried. By the best, I mean, that trained model predicts the testing set most accurately. And by testing set and training sets, I mean the parts of the original training data, not the testing data for which I don't know the outcome.
+Let's then perform prediction using Random Trees.
+
+Firslty, let's train the model.
+```{r, cache=T}
+modelFit<-train(classe~.,method="rf",
+                trControl=trainControl(method="cv",number=3), data=training)
+```
+And validate it on the testing set.
+```{r, cache=T}
+confusionMatrix(testing$classe,predict(modelFit,testing))
+```
+I am satisfied with the accuracy. Sensitivity for every class is greater than 98% and specificity is even higher. Thus, there is no class for which we have obvious problem. 
+Let's predict the values for the testing data (this for which we do not know the outcome). Firstly, we re-train the Random Forest model for all available data.
+Note that during the training we have used cross validation already, I have chosen only 2 folds, just because the computations are quite heavy and I am satisfied with the results. 
+```{r, cache=T}
+finalModel<-train(classe~.,method="rf",
+                  trControl=trainControl(method="cv",number=2), data=data.train)
+answers<-predict(finalModel,data.test)
+```
+It appeared that all answers were correct.
+
+##Conclusions
+The prediction for Human Activity Recognition was succesful. However, I am sure that the accuracy is still improveable. The hint for this is that there is some pattersn in confision matrix. The A activity is being confused with B, however, B is not being confused with A that often, a similar result is visible for activities B and C. If the model prediction is proper, one would expect that proportions of reverse misclassifications should be similar. 
+
+##References
+
+Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. Qualitative Activity Recognition of Weight Lifting Exercises. Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
+
+Read more: http://groupware.les.inf.puc-rio.br/
